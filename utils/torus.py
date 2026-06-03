@@ -4,7 +4,11 @@ import os
 
 file_path = os.path.realpath(__file__)
 script_folder = os.path.dirname(file_path)
-package_folder_path = os.path.dirname(script_folder)
+package_folder_path = os.environ.get('SO3_CACHE_DIR')
+if package_folder_path:
+    package_folder_path = os.path.abspath(package_folder_path)
+else:
+    package_folder_path = os.path.dirname(script_folder)
 
 """
     Preprocessing for the SO(2)/torus sampling and score computations, truncated infinite series are computed and then
