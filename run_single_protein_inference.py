@@ -45,6 +45,7 @@ parser.add_argument('--seed', type=int, default=42, help='set seed number')
 parser.add_argument('--rigid_protein', action='store_true', default=False, help='Use no noise in the final step of the reverse diffusion')
 parser.add_argument('--hts', action='store_true', default=False, help='high-throughput mode')
 parser.add_argument('--log_path', type=str, default="run.log", help='log file name')
+parser.add_argument('--dynamicbind_model_dir', type=str, default=None, help='model dir path, if not specified, will use the default one according to the model version and paper/model flag.')
 
 args = parser.parse_args()
 
@@ -121,13 +122,53 @@ else:
 
 header = args.header
 
-if args.paper:
-    model_workdir = f"{script_folder}/workdir/big_score_model_sanyueqi_with_time"
+import os
+import zipfile
+import requests
+from urllib.request import urlretrieve
+def download_and_extract_weights(target_dir):
+    # 配置路径与链接
+    zenodo_url = "https://zenodo.org/records/10137507/files/workdir.zip"
+    zip_path = os.path.join(target_dir, "workdir.zip")
+    print("🚀 正在从 Zenodo 下载模型权重 (workdir.zip)... 这可能需要几分钟...")
+    try:
+        # 开始下载并显示进度条（简易版）
+        def reporthook(blocknum, blocksize, totalsize):
+            readsofar = blocknum * blocksize
+            if totalsize > 0:
+                percent = readsofar * 1e2 / totalsize
+                s = f"\r下载进度: {percent:5.1f}% [{readsofar}/{totalsize} bytes]"
+                print(s, end='')
+            else:
+                print(f"\r已下载 {readsofar} bytes", end='')
+        urlretrieve(zenodo_url, zip_path, reporthook)
+        print("\n📥 下载完成！正在解压...")
+        # 解压到 model_workdir
+        os.makedirs(target_dir, exist_ok=True)
+        with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+            zip_ref.extractall(target_dir)    
+        print(f"🎉 成功解压至目标路径: {target_dir}")
+        # 清理下载的 zip 临时文件
+        if os.path.exists(zip_path):
+            os.remove(zip_path)   
+    except Exception as e:
+        print(f"❌ 下载或解压失败: {e}")
+        if os.path.exists(zip_path):
+            os.remove(zip_path)
+
+if args.dynamicbind_model_dir is not None:
+    model_workdir =  os.path.join(args.dynamicbind_model_dir, "workdir/big_score_model_sanyueqi_with_time")
     ckpt = "ema_inference_epoch314_model.pt"
+    if not os.path.exists(model_workdir):
+        download_and_extract_weights(args.dynamicbind_model_dir)
 else:
-    if args.model == 1:
+    if args.paper:
         model_workdir = f"{script_folder}/workdir/big_score_model_sanyueqi_with_time"
-        ckpt = "pro_ema_inference_epoch138_model.pt"
+        ckpt = "ema_inference_epoch314_model.pt"
+    else:
+        if args.model == 1:
+            model_workdir = f"{script_folder}/workdir/big_score_model_sanyueqi_with_time"
+            ckpt = "pro_ema_inference_epoch138_model.pt"
 
 if not args.rigid_protein:
     protein_dynamic = "--protein_dynamic"
