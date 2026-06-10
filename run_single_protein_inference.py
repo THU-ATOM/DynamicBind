@@ -175,11 +175,12 @@ if not args.rigid_protein:
 else:
     protein_dynamic = ""
 
+ESM_MODEL_NAME = "esm2_t33_650M_UR50D"
 if args.hts:
     os.system("mkdir -p data")
     cmd = f"{python} {script_folder}/datasets/esm_embedding_preparation.py --protein_ligand_csv {ligandFile_with_protein_path} --out_file data/prepared_for_esm_{header}.fasta"
     do(cmd)
-    cmd = f"CUDA_VISIBLE_DEVICES={args.device} {python} {script_folder}/esm/scripts/extract.py esm2_t33_650M_UR50D data/prepared_for_esm_{header}.fasta data/esm2_output --repr_layers 33 --include per_tok --truncation_seq_length 10000 --model_dir {script_folder}/esm_models"
+    cmd = f"CUDA_VISIBLE_DEVICES={args.device} {python} {script_folder}/esm/scripts/extract.py {ESM_MODEL_NAME} data/prepared_for_esm_{header}.fasta data/esm2_output --repr_layers 33 --include per_tok --truncation_seq_length 10000 --model_dir {script_folder}/esm_models"
     do(cmd)
     cmd = f"CUDA_VISIBLE_DEVICES={args.device} {python} {script_folder}/screening.py --seed {args.seed} --ckpt {ckpt} {protein_dynamic}"
     cmd += f" --save_visualisation --model_dir {model_workdir}  --protein_ligand_csv {ligandFile_with_protein_path} "
@@ -196,7 +197,39 @@ else:
             esm_model_dir = f"{script_folder}/esm_models"
         else:
             esm_model_dir = os.path.abspath(esm_model_dir)
-        cmd = f"CUDA_VISIBLE_DEVICES={args.device} {python} {script_folder}/esm/scripts/extract.py esm2_t33_650M_UR50D {args.results}/prepared_for_esm_{header}.fasta {args.results}/esm2_output --repr_layers 33 --include per_tok --truncation_seq_length 10000 --model_dir {esm_model_dir}"
+
+        def _is_valid_pt(path):
+            import zipfile
+            try:
+                with zipfile.ZipFile(path) as z:
+                    z.namelist()
+                return True
+            except Exception:
+                return False
+
+        def _ensure_esm_checkpoint(model_dir, model_name, url, max_retries=5):
+            os.makedirs(model_dir, exist_ok=True)
+            dst = os.path.join(model_dir, "checkpoints", f"{model_name}.pt")
+            os.makedirs(os.path.dirname(dst), exist_ok=True)
+            for attempt in range(max_retries):
+                if os.path.exists(dst) and _is_valid_pt(dst):
+                    return
+                if os.path.exists(dst):
+                    print(f"ESM checkpoint corrupted, removing and retrying ({attempt+1}/{max_retries}): {dst}")
+                    os.remove(dst)
+                print(f"Downloading ESM checkpoint (attempt {attempt+1}/{max_retries}): {url}")
+                ret = os.system(f"wget -c -q --show-progress -O {dst} {url}")
+                if ret != 0:
+                    print(f"wget failed with code {ret}")
+            if not os.path.exists(dst) or not _is_valid_pt(dst):
+                raise RuntimeError(f"Failed to download valid ESM checkpoint after {max_retries} attempts: {dst}")
+
+        _ensure_esm_checkpoint(
+            esm_model_dir, ESM_MODEL_NAME,
+            f"https://dl.fbaipublicfiles.com/fair-esm/models/{ESM_MODEL_NAME}.pt",
+        )
+
+        cmd = f"CUDA_VISIBLE_DEVICES={args.device} {python} {script_folder}/esm/scripts/extract.py {ESM_MODEL_NAME} {args.results}/prepared_for_esm_{header}.fasta {args.results}/esm2_output --repr_layers 33 --include per_tok --truncation_seq_length 10000 --model_dir {esm_model_dir}"
         do(cmd)
         cmd = f"CUDA_VISIBLE_DEVICES={args.device} {python} {script_folder}/inference.py --seed {args.seed} --ckpt {ckpt} {protein_dynamic}"
         cmd += f" --save_visualisation --model_dir {model_workdir}  --protein_ligand_csv {ligandFile_with_protein_path} "

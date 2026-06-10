@@ -29,6 +29,9 @@ COPY . $HOME_INSTALL/DynamicBind
 # Stage 2: Runtime Environment
 FROM nvidia/cuda:11.7.1-runtime-ubuntu22.04
 
+# Install wget for ESM checkpoint download
+RUN apt-get update -y && apt-get install -y wget && rm -rf /var/lib/apt/lists/*
+
 # Use root user; set HOME and WORKDIR explicitly
 ENV HOME_INSTALL=/usr/local
 WORKDIR $HOME_INSTALL
